@@ -268,20 +268,23 @@ static bool touchInit() {
   return Wire.endTransmission() == 0;
 }
 static bool touchRead(int* px, int* py) {
+  // CST9217 (per waveshare/esp_lcd_touch_cst9217): data reg 0xD000, 10 bytes,
+  // points = data[5] & 0x7F, ACK byte = 0xAB at data[6], point0 = 12-bit x/y.
+  uint8_t d[10] = {0};
   Wire.beginTransmission(TOUCH_ADDR);
-  Wire.write(0x02);
+  Wire.write((uint8_t)(0xD000 >> 8));
+  Wire.write((uint8_t)(0xD000 & 0xFF));
   if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom((int)TOUCH_ADDR, 1) != 1) return false;
-  uint8_t n = Wire.read() & 0x0F;
-  if (!n) return false;
-  Wire.beginTransmission(TOUCH_ADDR);
-  Wire.write(0x03);
-  if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom((int)TOUCH_ADDR, 5) < 5) return false;
-  uint8_t xh = Wire.read(), xl = Wire.read(), yh = Wire.read(), yl = Wire.read();
-  Wire.read();
-  *px = ((xh & 0x0F) << 8) | xl;
-  *py = ((yh & 0x0F) << 8) | yl;
+  if (Wire.requestFrom((int)TOUCH_ADDR, 10) != 10) return false;
+  for (int i = 0; i < 10; i++) d[i] = (uint8_t)Wire.read();
+  if (d[6] != 0xAB) return false;
+  if ((d[5] & 0x7F) == 0) return false;
+  if ((d[0] & 0x0F) != 0x06) return false;
+  int x = ((d[1] << 4) | (d[3] >> 4));
+  int y = ((d[2] << 4) | (d[3] & 0x0F));
+  if (x > SCR || y > SCR) { x = x * SCR / 4095; y = y * SCR / 4095; }
+  *px = x;
+  *py = y;
   return true;
 }
 

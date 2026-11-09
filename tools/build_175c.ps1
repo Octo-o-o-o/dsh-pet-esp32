@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $sketch = Join-Path $root "firmware_175c\dsh_pet_175c"
 $build = Join-Path $root "firmware_175c\build"
-$cli = Join-Path $PSScriptRoot "arduino-cli\arduino-cli.exe"
+$cli = if ($env:DSH_DIAL_ARDUINO_CLI) { $env:DSH_DIAL_ARDUINO_CLI } elseif (Test-Path (Join-Path $PSScriptRoot "arduino-cli\arduino-cli.exe")) { Join-Path $PSScriptRoot "arduino-cli\arduino-cli.exe" } else { "arduino-cli" }
 
 $ToolRoot = if ($env:DSH_DIAL_TOOLCHAIN) { $env:DSH_DIAL_TOOLCHAIN } else { "C:\dshdial" }
 $env:ARDUINO_DIRECTORIES_DATA = "$ToolRoot\arduino-data"
@@ -26,6 +26,10 @@ $env:TMP = "$ToolRoot\tmp"
 $env:TEMP = "$ToolRoot\tmp"
 
 $fqbn = "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=32M,PartitionScheme=custom,PSRAM=opi,CPUFreq=240,FlashMode=qio,UploadSpeed=921600"
+
+# esp_lcd_co5300 must be installed as an Arduino library (see libs/)
+$libDir = Join-Path $env:ARDUINO_DIRECTORIES_USER "libraries\esp_lcd_co5300"
+if (-not (Test-Path $libDir)) { throw "missing esp_lcd_co5300 library: copy libs\esp_lcd_co5300 into $libDir" }
 
 Write-Host "== compile ==" -ForegroundColor Cyan
 & $cli compile --fqbn $fqbn --output-dir $build $sketch
@@ -48,3 +52,5 @@ Write-Host "== flash ==" -ForegroundColor Cyan
 & python -m esptool @argsList
 if ($LASTEXITCODE -ne 0) { throw "flash failed" }
 Write-Host "done" -ForegroundColor Green
+
+
