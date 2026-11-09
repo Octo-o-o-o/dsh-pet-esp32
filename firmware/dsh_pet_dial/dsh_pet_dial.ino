@@ -583,6 +583,11 @@ static void pollWifi() {
 }
 
 void setup() {
+  // M5Dial latches battery power on GPIO46 (HOLD): on battery-only power the
+  // device sleeps again unless this is driven high before anything else.
+  pinMode(46, OUTPUT);
+  digitalWrite(46, HIGH);
+
   auto cfg = M5.config();
   M5Dial.begin(cfg, true, false);
   M5Dial.Display.setRotation(0);

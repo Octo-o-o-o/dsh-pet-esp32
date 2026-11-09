@@ -191,3 +191,11 @@ Notes:
   disappears, so unplugging USB no longer risks a hung loop.
 - If `B` reports `mv=0 level=-2` the board is not seeing a battery at all — that is a
   power/hardware condition, not a link problem, and WiFi will not fix it.
+
+### Battery / untethered power (Dial)
+
+M5Stack's docs for the Dial state that on battery-only power the firmware **must drive
+HOLD (GPIO46) high** during init or the device goes back to sleep; the firmware now does
+that as the very first thing in `setup()`. The Dial ships **without** a battery — it has
+an MX1.25-2P connector for a 3.7 V LiPo, so install one before expecting it to survive
+unplugging. `B` reports `mv`/`chg`; `mv=0 level=-2` means no battery is seen.
