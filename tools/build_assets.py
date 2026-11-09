@@ -18,7 +18,7 @@ FONT = os.path.join(ASSETS, "fonts", "上首软糖体.ttf")
 FRAMES = os.environ.get("PET_FRAMES", os.path.join(ROOT, "work", "frames"))
 OUT = os.environ.get("PET_OUT", os.path.join(ROOT, "firmware", "data"))
 FPS = 10
-CROP = tuple(int(v) for v in os.environ.get("PET_CROP", "146,2,340,340").split(","))
+CROP = tuple(int(v) for v in os.environ.get("PET_CROP", "146,14,340,340").split(","))
 SIZE = int(os.environ.get("PET_SIZE", "240"))
 BG = (10, 14, 26)
 
@@ -243,6 +243,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
