@@ -128,3 +128,26 @@ pwsh -File tools\build.ps1 -Assets    # 连素材一起烧
 
 MIT，见 [LICENSE](LICENSE)。原始版权声明（PC2005-cloud）保留。
 dsh-pet 的字体文件没有重新分发，只在构建时用来渲染文本位图。
+
+## Waveshare ESP32-S3-Touch-AMOLED-1.75C (466x466)
+
+Second target in `firmware_175c/`: CO5300 over QSPI (CS12 / CLK38 / D0-3 = 4-7 / RST1),
+CST9217 touch on I2C (SDA15 / SCL14 / RST2). No encoder and no buttons, so gestures
+replace the knob:
+
+| Gesture | Effect |
+| --- | --- |
+| tap | next animation |
+| double tap | previous animation |
+| swipe left / right | next / previous |
+| long press | sleep / wake |
+
+Build/flash:
+
+```powershell
+pwsh -File tools\build_175c.ps1
+```
+
+Notes: the 466x466 blob is 11.5 MB, so frames are read from the assets partition per
+frame instead of mmap (the S3 flash mapping window here tops out at 8 MB), and the
+434 KB sprite is allocated explicitly from PSRAM.

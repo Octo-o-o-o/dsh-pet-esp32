@@ -105,11 +105,14 @@ enum Role : uint8_t {
 };
 static const uint16_t ID_ANIM = 100, ID_PHRASE = 300;
 
-static const PetHeader* hdr = nullptr;
-static const PetAnim* anims = nullptr;
-static const PetFrame* frames = nullptr;
-static const PetText* texts = nullptr;
-static const uint8_t* blob = nullptr;
+static PetHeader hdrCopy;
+static const PetHeader* hdr = &hdrCopy;
+static PetAnim* anims = nullptr;
+static PetFrame* frames = nullptr;
+static PetText* texts = nullptr;
+static const esp_partition_t* assetPart = nullptr;
+static uint8_t* frameBuf = nullptr;
+static uint8_t* textBuf = nullptr;
 static bool assetsOk = false;
 
 // ---------------------------------------------------------------- state
@@ -191,9 +194,12 @@ static void blitText(uint16_t id, int cx, int cy, uint16_t fg) {
       fb[y * SCR + x] = sw(v);
     }
   }
+  int bytes = rb * t->h;
+  if (!textBuf || bytes > 16384) return;
+  if (esp_partition_read(assetPart, t->offset, textBuf, bytes) != ESP_OK) return;
   uint16_t f = sw(fg);
   for (int y = 0; y < t->h; y++) {
-    const uint8_t* row = blob + t->offset + y * rb;
+    const uint8_t* row = textBuf + y * rb;
     for (int x = 0; x < t->w; x++) {
       if (!(row[x >> 3] & (0x80 >> (x & 7)))) continue;
       int px = x0 + x, py = y0 + y;
@@ -207,7 +213,9 @@ static void renderFrame(int anim, int f) {
   const PetAnim& a = anims[anim];
   if (f < 0 || f >= a.count) return;
   const PetFrame& pf = frames[a.first + f];
-  jpeg.openRAM((uint8_t*)(blob + pf.offset), pf.size, drawBlock);
+  if (!frameBuf || pf.size > 65536) return;
+  if (esp_partition_read(assetPart, pf.offset, frameBuf, pf.size) != ESP_OK) return;
+  jpeg.openRAM(frameBuf, pf.size, drawBlock);
   jpeg.setPixelType(RGB565_BIG_ENDIAN);
   if (jpeg.decode(0, 0, 0)) framesDrawn++;
   jpeg.close();
@@ -430,21 +438,22 @@ static void pollSerial() {
 
 // ---------------------------------------------------------------- setup
 static bool mountAssets() {
-  const esp_partition_t* part = esp_partition_find_first(
+  assetPart = esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "assets");
-  if (!part) { Serial.println("ERR no assets partition"); return false; }
-  const void* mapped = nullptr;
-  esp_partition_mmap_handle_t h;
-  if (esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &mapped, &h) != ESP_OK) {
-    Serial.println("ERR mmap"); return false;
-  }
-  blob = (const uint8_t*)mapped;
-  hdr = (const PetHeader*)blob;
-  if (memcmp(hdr->magic, "PETD", 4) != 0 || hdr->version < 2) { Serial.println("ERR blob"); return false; }
-  anims = (const PetAnim*)(blob + hdr->animOff);
-  frames = (const PetFrame*)(blob + hdr->frameOff);
-  texts = (const PetText*)(blob + hdr->textOff);
-  Serial.printf("assets ok: %u anims %u frames %u texts\n", hdr->animCount, hdr->frameCount, hdr->textCount);
+  if (!assetPart) { Serial.println("ERR no assets partition"); return false; }
+  if (esp_partition_read(assetPart, 0, &hdrCopy, sizeof(hdrCopy)) != ESP_OK) return false;
+  if (memcmp(hdrCopy.magic, "PETD", 4) != 0 || hdrCopy.version < 2) { Serial.println("ERR blob"); return false; }
+  anims = (PetAnim*)malloc(hdrCopy.animCount * sizeof(PetAnim));
+  frames = (PetFrame*)malloc(hdrCopy.frameCount * sizeof(PetFrame));
+  texts = (PetText*)malloc(hdrCopy.textCount * sizeof(PetText));
+  if (!anims || !frames || !texts) { Serial.println("ERR tables"); return false; }
+  esp_partition_read(assetPart, hdrCopy.animOff, anims, hdrCopy.animCount * sizeof(PetAnim));
+  esp_partition_read(assetPart, hdrCopy.frameOff, frames, hdrCopy.frameCount * sizeof(PetFrame));
+  esp_partition_read(assetPart, hdrCopy.textOff, texts, hdrCopy.textCount * sizeof(PetText));
+  frameBuf = (uint8_t*)heap_caps_malloc(65536, MALLOC_CAP_SPIRAM);
+  textBuf = (uint8_t*)heap_caps_malloc(16384, MALLOC_CAP_SPIRAM);
+  if (!frameBuf || !textBuf) { Serial.println("ERR bufs"); return false; }
+  Serial.printf("assets ok: %u anims %u frames %u texts\n", hdrCopy.animCount, hdrCopy.frameCount, hdrCopy.textCount);
   return true;
 }
 
@@ -458,8 +467,9 @@ void setup() {
   lcd.setBrightness(200);
 
   Serial.println("STAGE canvas");
-  canvas.setColorDepth(16);
-  if (!canvas.createSprite(SCR, SCR)) Serial.println("ERR sprite");
+  void* sbuf = heap_caps_malloc((size_t)SCR * SCR * 2, MALLOC_CAP_SPIRAM);
+  if (!sbuf) { Serial.println("ERR sprite"); return; }
+  canvas.setBuffer(sbuf, SCR, SCR, 16);
   canvas.fillScreen(0x0821);
   canvas.pushSprite(0, 0);
 
