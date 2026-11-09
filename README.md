@@ -7,9 +7,8 @@ DSH 在思考/干活/出错时会跟着变状态，转旋钮还能一章一章�
 角色美术、动画、状态台词全部来自原作者 **PC2005-cloud** 的 dsh-pet（MIT），
 本项目只做「重新编码 + 上设备」。详见文末[致谢](#致谢)。
 
-| 待机 | 跟着 DSH 干活 |
-| --- | --- |
-| ![idle](docs/dial-idle.png) | ![working](docs/dial-working.png) |
+![Dial 实拍](docs/dial-real.jpg)
+
 
 ## 能做什么
 
