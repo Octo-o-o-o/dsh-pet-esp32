@@ -1,0 +1,163 @@
+{
+ "animations": [
+  {
+   "label": "IDLE",
+   "role": "idle",
+   "loop": true,
+   "frames": 74
+  },
+  {
+   "label": "LOOK AROUND",
+   "role": "fun",
+   "loop": false,
+   "frames": 21
+  },
+  {
+   "label": "HAPPY HOP",
+   "role": "click",
+   "loop": false,
+   "frames": 16
+  },
+  {
+   "label": "SHY",
+   "role": "click",
+   "loop": false,
+   "frames": 15
+  },
+  {
+   "label": "TSUNDERE",
+   "role": "click",
+   "loop": false,
+   "frames": 15
+  },
+  {
+   "label": "WAVE",
+   "role": "click",
+   "loop": false,
+   "frames": 9
+  },
+  {
+   "label": "GIGGLE",
+   "role": "click",
+   "loop": false,
+   "frames": 10
+  },
+  {
+   "label": "SLEEP",
+   "role": "sleep_start",
+   "loop": false,
+   "frames": 19
+  },
+  {
+   "label": "SLEEPING",
+   "role": "sleep_loop",
+   "loop": true,
+   "frames": 6
+  },
+  {
+   "label": "WAKE UP",
+   "role": "sleep_end",
+   "loop": false,
+   "frames": 8
+  },
+  {
+   "label": "THINKING",
+   "role": "thinking",
+   "loop": true,
+   "frames": 22
+  },
+  {
+   "label": "WORKING",
+   "role": "working",
+   "loop": true,
+   "frames": 24
+  },
+  {
+   "label": "FILING",
+   "role": "result",
+   "loop": true,
+   "frames": 21
+  },
+  {
+   "label": "WAITING",
+   "role": "waiting",
+   "loop": true,
+   "frames": 22
+  },
+  {
+   "label": "DONE",
+   "role": "success",
+   "loop": false,
+   "frames": 15
+  },
+  {
+   "label": "OOPS",
+   "role": "error",
+   "loop": false,
+   "frames": 16
+  },
+  {
+   "label": "RUBIK",
+   "role": "fun",
+   "loop": false,
+   "frames": 24
+  },
+  {
+   "label": "RICE",
+   "role": "fun",
+   "loop": false,
+   "frames": 21
+  },
+  {
+   "label": "STRETCH",
+   "role": "fun",
+   "loop": false,
+   "frames": 21
+  },
+  {
+   "label": "FAN",
+   "role": "fun",
+   "loop": false,
+   "frames": 28
+  },
+  {
+   "label": "CODING",
+   "role": "fun",
+   "loop": false,
+   "frames": 20
+  },
+  {
+   "label": "DANCE",
+   "role": "fun",
+   "loop": false,
+   "frames": 30
+  },
+  {
+   "label": "WHALE",
+   "role": "fun",
+   "loop": false,
+   "frames": 21
+  },
+  {
+   "label": "HUMMING",
+   "role": "fun",
+   "loop": false,
+   "frames": 29
+  },
+  {
+   "label": "MIRROR",
+   "role": "fun",
+   "loop": false,
+   "frames": 25
+  },
+  {
+   "label": "NAPPING",
+   "role": "fun",
+   "loop": false,
+   "frames": 27
+  }
+ ],
+ "frames": 559,
+ "texts": 46,
+ "bytes": 5037100
+}

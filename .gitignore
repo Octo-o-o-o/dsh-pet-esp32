@@ -1,0 +1,15 @@
+# build output
+firmware/build/
+*.elf
+*.map
+*.bin.bak
+
+# regenerated at build time
+work/
+__pycache__/
+
+# local toolchain (see README)
+tools/arduino-cli/
+tools/libzip/
+tools/build-cache/
+tools/tmp/
