@@ -148,7 +148,14 @@ static void pickPhrase(DshState s) {
     case DS_ERROR:    base = 13; cnt = 3; break;
     default: phraseId = 0; return;
   }
-  phraseId = ID_PHRASE + base + (uint16_t)random(cnt);
+  // pick the shortest variant: it renders at the largest font size
+  uint16_t best = ID_PHRASE + base;
+  int bestW = 1 << 14;
+  for (int i = 0; i < cnt; i++) {
+    const PetText* t = findText((uint16_t)(ID_PHRASE + base + i));
+    if (t && t->w < bestW) { bestW = t->w; best = (uint16_t)(ID_PHRASE + base + i); }
+  }
+  phraseId = best;
 }
 
 // ---------------------------------------------------------------- rendering
@@ -222,21 +229,12 @@ static void drawRing(uint16_t c565, bool busy) {
   }
 }
 
+// Keep it simple: just the pet and one big caption line. No ring, no mode chip.
 static void drawOverlay() {
-  uint16_t c = stateColor();
-  bool busy = dshState == DS_THINKING || dshState == DS_WORKING || dshState == DS_WAITING;
-  drawRing(c, busy);
-
-  uint16_t mode = ID_MODE_AUTO;
-  if (sleeping) mode = ID_MODE_SLEEP;
-  else if (millis() < manualUntil) mode = ID_MODE_MANUAL;
-  else if (dshState != DS_NONE) mode = ID_MODE_DSH;
-  blitText(mode, SCR / 2, 16, c);
-
   if (dshState != DS_NONE && phraseId) {
-    blitText(phraseId, SCR / 2, SCR - 28, 0xFFFF);
+    blitText(phraseId, SCR / 2, SCR - 46, 0xFFFF);
   } else if (curAnim >= 0) {
-    blitText((uint16_t)(ID_ANIM + curAnim), SCR / 2, SCR - 28, 0xFFFF);
+    blitText((uint16_t)(ID_ANIM + curAnim), SCR / 2, SCR - 46, 0xFFFF);
   }
 }
 

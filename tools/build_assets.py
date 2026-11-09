@@ -12,14 +12,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS = os.environ.get("DSH_PET_ASSETS", os.path.expanduser(r"~\.dsh\profiles\desktop\node_modules\dsh-pet\assets"))
+ASSETS = r"C:\Users\satan\.dsh\profiles\desktop\node_modules\dsh-pet\assets"
 WEBM = os.path.join(ASSETS, "webm")
 FONT = os.path.join(ASSETS, "fonts", "上首软糖体.ttf")
-FRAMES = os.path.join(ROOT, "work", "frames")
-OUT = os.path.join(ROOT, "firmware", "data")
+FRAMES = os.environ.get("PET_FRAMES", os.path.join(ROOT, "work", "frames"))
+OUT = os.environ.get("PET_OUT", os.path.join(ROOT, "firmware", "data"))
 FPS = 10
-CROP = (146, 2, 340, 340)
-SIZE = 240
+CROP = tuple(int(v) for v in os.environ.get("PET_CROP", "146,2,340,340").split(","))
+SIZE = int(os.environ.get("PET_SIZE", "240"))
 BG = (10, 14, 26)
 
 # name, ascii label, target seconds, loop, role
@@ -63,7 +63,7 @@ WORK_TEXTS = [
     ["这一步好像没跑通呢", "刚才的操作遇到点问题哦", "这里卡了一下，再等等你呢"],
 ]
 
-TEXT_MAX_W = 160
+TEXT_MAX_W = int(185 * SIZE / 240)
 ID_ANIM = 100
 ID_MODE = 200      # 200 AUTO, 201 MANUAL, 202 SLEEP, 203 DSH
 ID_PHRASE = 300
@@ -134,7 +134,7 @@ def encode_one(item):
 
 def render_text(text, max_w=TEXT_MAX_W):
     """Render one string to a trimmed 1bpp bitmap (MSB first, row padded to bytes)."""
-    for size in (13, 12, 11, 10, 9):
+    for size in (18, 17, 16, 15, 14, 13, 12, 11, 10, 9):
         font = ImageFont.truetype(FONT, size)
         img = Image.new("L", (max_w + 60, 34), 0)
         ImageDraw.Draw(img).text((4, 4), text, font=font, fill=255)
@@ -243,4 +243,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
