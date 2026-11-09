@@ -122,7 +122,6 @@ pwsh -File tools\build.ps1 -Assets    # 连素材一起烧
 - **M5Stack** —— M5Dial / M5Unified / M5GFX，Dial 的屏幕、旋钮、触摸都是它们封装的。
 - **LovyanGFX** —— M5GFX 的上游图形库。
 - **Larry Bank (bitbank2)** —— JPEGDEC，240×240 每帧 13ms 解码靠它。
-- **Anyvia Dial 交互 demo** —— README 里带机身外框的截图，外框配色和比例参考自它。
 
 ## 许可证
 
@@ -151,3 +150,4 @@ pwsh -File tools\build_175c.ps1
 Notes: the 466x466 blob is 11.5 MB, so frames are read from the assets partition per
 frame instead of mmap (the S3 flash mapping window here tops out at 8 MB), and the
 434 KB sprite is allocated explicitly from PSRAM.
+
