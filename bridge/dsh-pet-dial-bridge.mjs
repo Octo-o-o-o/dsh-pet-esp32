@@ -16,6 +16,8 @@
  * The device replies with "READY ..." at boot and "ACK S ..." per command.
  */
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
@@ -153,6 +155,7 @@ async function pollState() {
 }
 
 function sendState(state) {
+  httpState = state;
   if (!dial || state === lastState) return;
   if (dial.write(`S ${state}`)) {
     lastState = state;
@@ -162,8 +165,37 @@ function sendState(state) {
   }
 }
 
+let httpState = 'idle';
+
+function lanAddress() {
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list || []) {
+      if (ni.family === 'IPv4' && !ni.internal) return ni.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+function startHttp() {
+  const port = Number(opt('http-port', '8787'));
+  const server = http.createServer((req, res) => {
+    if (req.url === '/state') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ state: httpState }));
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  server.listen(port, '0.0.0.0', () => {
+    log(`http state on http://${lanAddress()}:${port}/state (for WiFi devices)`);
+  });
+  return server;
+}
+
 async function main() {
   log('bridge starting; pet =', petId);
+  startHttp();
   if (!(await ensureDial())) log('dial not found yet, will keep retrying');
   else {
     // reset any stale state on the device

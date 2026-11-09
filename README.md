@@ -173,3 +173,21 @@ INFO anims=26 frames=562 texts=46 heap=313824 cur=WORKING f=6 drawn=380 dsh=3
 - Gestures can be exercised without a finger via `G <n>` on the serial port:
   `G 1` tap, `G 2` long press, `G 3` swipe left, `G 4` swipe right.
 - `S working` returns `ACK S working` and the device switches to the WORKING clip.
+
+### Untethered (WiFi) mode
+
+The Dial can mirror DSH without USB: the bridge also serves its current state on the
+LAN, and the firmware polls it.
+
+1. Start the bridge; it prints `http state on http://<lan-ip>:8787/state`.
+2. On the device (USB serial once):
+   `W <ssid>|<password>` then `H <lan-ip>:8787` — both are saved to NVS.
+3. `B` prints `BAT mv=… chg=… level=… wifi=…`; `I` includes `wifi=` and `bat=`.
+
+Notes:
+
+- The USB serial protocol keeps working; WiFi is an additive path (2 s poll).
+- `Serial.setTxTimeoutMs(10)` keeps the firmware from blocking if the USB host
+  disappears, so unplugging USB no longer risks a hung loop.
+- If `B` reports `mv=0 level=-2` the board is not seeing a battery at all — that is a
+  power/hardware condition, not a link problem, and WiFi will not fix it.

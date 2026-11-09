@@ -15,6 +15,9 @@
 #include <M5Dial.h>
 #include <JPEGDEC.h>
 #include <esp_partition.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <Preferences.h>
 
 static const int SCR = 240;
 
@@ -100,6 +103,13 @@ static uint32_t lastDecodeMs = 0;
 static uint32_t framesDrawn = 0;
 static char serialLine[128];
 static size_t serialLen = 0;
+
+// WiFi link: the bridge exposes GET /state on the LAN, so the Dial can keep
+// mirroring DSH without being tethered to USB.
+static Preferences prefs;
+static String wifiSsid, wifiPass, bridgeHost;
+static bool wifiStarted = false;
+static uint32_t lastPollMs = 0;
 
 // ---------------------------------------------------------------- helpers
 static inline uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) { return lgfx::color565(r, g, b); }
@@ -446,11 +456,37 @@ static void handleLine(char* line) {
     // test hook: pretend the knob moved by <n> counts
     M5Dial.Encoder.write(atoi(arg));
     Serial.printf("ACK E %s\n", arg);
+  } else if (cmd == 'W') {
+    // W ssid|pass
+    char* bar = strchr(arg, '|');
+    if (bar) {
+      *bar = 0;
+      wifiSsid = arg;
+      wifiPass = bar + 1;
+      prefs.putString("ssid", wifiSsid);
+      prefs.putString("pass", wifiPass);
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+      wifiStarted = true;
+      Serial.println("ACK W");
+    } else {
+      Serial.println("ERR W ssid|pass");
+    }
+  } else if (cmd == 'H') {
+    // H 192.168.1.20:8787
+    bridgeHost = arg;
+    prefs.putString("host", bridgeHost);
+    Serial.printf("ACK H %s\n", bridgeHost.c_str());
+  } else if (cmd == 'B') {
+    Serial.printf("BAT mv=%d chg=%d level=%d wifi=%d rssi=%d host=%s\n",
+                  M5.Power.getBatteryVoltage(), (int)M5.Power.isCharging(),
+                  M5.Power.getBatteryLevel(), (int)WiFi.status(), WiFi.RSSI(), bridgeHost.c_str());
   } else if (cmd == 'I') {
-    Serial.printf("INFO anims=%u frames=%u texts=%u heap=%u cur=%s f=%d dec=%ums drawn=%u dsh=%d enc=%ld\n",
+    Serial.printf("INFO anims=%u frames=%u texts=%u heap=%u cur=%s f=%d dec=%ums drawn=%u dsh=%d enc=%ld wifi=%d bat=%d\n",
                   hdr->animCount, hdr->frameCount, hdr->textCount, (unsigned)ESP.getFreeHeap(),
                   curAnim >= 0 ? anims[curAnim].label : "?", curFrame,
-                  (unsigned)lastDecodeMs, (unsigned)framesDrawn, (int)dshState, (long)encTotal);
+                  (unsigned)lastDecodeMs, (unsigned)framesDrawn, (int)dshState, (long)encTotal,
+                  (int)WiFi.status(), M5.Power.getBatteryVoltage());
   } else if (cmd == 'V') {
     // dump the sprite (every 2nd pixel) as hex so the host can eyeball the render
     uint16_t* buf = (uint16_t*)canvas.getBuffer();
@@ -519,6 +555,33 @@ static bool mountAssets() {
   return true;
 }
 
+static void applyStateString(const char* v) {
+  DshState s = stateFromString(v);
+  if (s == DS_NONE) { dshState = DS_NONE; phraseId = 0; playBase(findRole(R_IDLE)); }
+  else setDshState(s);
+}
+
+static void pollWifi() {
+  if (!wifiStarted || WiFi.status() != WL_CONNECTED || !bridgeHost.length()) return;
+  uint32_t now = millis();
+  if (now - lastPollMs < 2000) return;
+  lastPollMs = now;
+  HTTPClient http;
+  String url = String("http://") + bridgeHost + "/state";
+  http.setTimeout(1500);
+  if (!http.begin(url)) return;
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    int i = body.indexOf("\"state\":\"");
+    if (i >= 0) {
+      int j = body.indexOf('"', i + 9);
+      if (j > i) applyStateString(body.substring(i + 9, j).c_str());
+    }
+  }
+  http.end();
+}
+
 void setup() {
   auto cfg = M5.config();
   M5Dial.begin(cfg, true, false);
@@ -563,6 +626,7 @@ void loop() {
     nextAutoMs = millis() + random(8000, 16000);
   }
 
+  pollWifi();
   tickPlayback();
   delay(2);
 }
