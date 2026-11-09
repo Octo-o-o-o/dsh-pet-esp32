@@ -290,6 +290,7 @@ static bool touchRead(int* px, int* py) {
 
 struct TouchState { bool down = false; uint32_t downMs = 0, lastTapMs = 0; int startX = 0, startY = 0, x = 0, y = 0; };
 static TouchState ts;
+static int upCount = 0;
 
 static void handleGesture(bool down, int x, int y) {
   uint32_t now = millis();
@@ -313,8 +314,16 @@ static void pollTouch() {
   // coordinates there made a long press look like a swipe and killed sleep.
   int x = ts.x, y = ts.y;
   bool down = touchRead(&x, &y);
-  if (down) { x = x * SCR / 466; y = y * SCR / 466; }
-  handleGesture(down, x, y);
+  if (down) {
+    upCount = 0;
+    x = x * SCR / 466;
+    y = y * SCR / 466;
+    handleGesture(true, x, y);
+  } else {
+    // one failed read must not end the press, or a long press becomes a tap
+    if (upCount < 2) { upCount++; return; }
+    handleGesture(false, x, y);
+  }
 }
 
 // ---------------------------------------------------------------- serial
