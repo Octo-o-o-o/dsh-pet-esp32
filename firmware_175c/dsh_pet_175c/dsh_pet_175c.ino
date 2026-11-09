@@ -300,7 +300,7 @@ static void handleGesture(bool down, int x, int y) {
     uint32_t held = now - ts.downMs;
     int dx = x - ts.startX;
     if (held > 700) { toggleSleep(); return; }
-    if (abs(dx) > 60) { stepManual(dx < 0 ? +1 : -1); return; }
+    if (abs(dx) > 90) { stepManual(dx < 0 ? +1 : -1); return; }
     if (held < 400) {
       if (now - ts.lastTapMs < 350) { ts.lastTapMs = 0; stepManual(-1); }
       else { ts.lastTapMs = now; stepManual(+1); }
@@ -309,7 +309,9 @@ static void handleGesture(bool down, int x, int y) {
   ts.x = x; ts.y = y;
 }
 static void pollTouch() {
-  int x, y;
+  // Keep the last known position for the release edge: passing uninitialised
+  // coordinates there made a long press look like a swipe and killed sleep.
+  int x = ts.x, y = ts.y;
   bool down = touchRead(&x, &y);
   if (down) { x = x * SCR / 466; y = y * SCR / 466; }
   handleGesture(down, x, y);
@@ -343,6 +345,26 @@ static void handleLine(char* line) {
     if (idx >= 0) { manualUntil = millis() + 20000; playOverlay(idx); Serial.printf("ACK A %d\n", idx); }
   } else if (cmd == 'P') {
     Serial.println("PONG");
+  } else if (cmd == 'C') {
+    // colour-order self test: four quadrants R/G/B/W
+    for (int y = 0; y < SCR; y++) {
+      for (int x = 0; x < SCR; x++) {
+        uint16_t c = (y < SCR / 2) ? (x < SCR / 2 ? 0xF800 : 0x07E0) : (x < SCR / 2 ? 0x001F : 0xFFFF);
+        fb[y * SCR + x] = sw(c);
+      }
+    }
+    pushFb();
+    delay(2500);
+    Serial.println("ACK C");
+  } else if (cmd == 'V') {
+    Serial.printf("SHOT %d\n", SCR / 2);
+    char line[8 + (SCR / 2) * 4 + 4];
+    for (int y = 0; y < SCR; y += 2) {
+      int n = snprintf(line, sizeof(line), "P%03d ", y);
+      for (int x = 0; x < SCR; x += 2) n += snprintf(line + n, sizeof(line) - n, "%04x", fb[y * SCR + x]);
+      Serial.println(line);
+    }
+    Serial.println("END");
   } else if (cmd == 'I') {
     Serial.printf("INFO anims=%u frames=%u texts=%u heap=%u cur=%s f=%d drawn=%u dsh=%d\n",
                   hdr->animCount, hdr->frameCount, hdr->textCount, (unsigned)ESP.getFreeHeap(),

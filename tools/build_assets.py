@@ -9,7 +9,7 @@ labels) drawn with the pet's own font, so the firmware needs no CJK font engine.
 import os, sys, glob, json, struct, subprocess, io
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = r"C:\Users\satan\.dsh\profiles\desktop\node_modules\dsh-pet\assets"
@@ -21,6 +21,8 @@ FPS = 10
 CROP = tuple(int(v) for v in os.environ.get("PET_CROP", "146,14,340,340").split(","))
 SIZE = int(os.environ.get("PET_SIZE", "240"))
 BG = (10, 14, 26)
+QUALITY = int(os.environ.get("PET_QUALITY", "80"))
+SHARPEN = os.environ.get("PET_SHARPEN", "0") == "1"
 
 # name, ascii label, target seconds, loop, role
 ANIMS = [
@@ -123,7 +125,10 @@ def encode_one(item):
         comp = bg.copy()
         comp.alpha_composite(im)
         b = io.BytesIO()
-        comp.convert("RGB").save(b, "JPEG", quality=80, optimize=True, subsampling=2)
+        out_img = comp.convert("RGB")
+        if SHARPEN:
+            out_img = out_img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=70, threshold=3))
+        out_img.save(b, "JPEG", quality=QUALITY, optimize=True, subsampling=2)
         blobs.append(b.getvalue())
         nxt = keep[idx + 1] if idx + 1 < len(keep) else cnt
         durs.append(int(round((nxt - i) * 1000 / FPS)))
@@ -134,7 +139,7 @@ def encode_one(item):
 
 def render_text(text, max_w=TEXT_MAX_W):
     """Render one string to a trimmed 1bpp bitmap (MSB first, row padded to bytes)."""
-    for size in (18, 17, 16, 15, 14, 13, 12, 11, 10, 9):
+    for size in range(max(9, int(round(18 * SIZE / 240))), max(6, int(round(9 * SIZE / 240))) - 1, -1):
         font = ImageFont.truetype(FONT, size)
         img = Image.new("L", (max_w + 60, 34), 0)
         ImageDraw.Draw(img).text((4, 4), text, font=font, fill=255)
@@ -243,6 +248,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
