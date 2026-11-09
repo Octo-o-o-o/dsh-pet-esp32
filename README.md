@@ -150,3 +150,15 @@ Notes: the 466x466 blob is 11.5 MB, so frames are read from the assets partition
 frame instead of mmap (the S3 flash mapping window here tops out at 8 MB), and the
 434 KB sprite is allocated explicitly from PSRAM.
 
+
+### 1.75C notes (working path)
+
+The M5GFX Panel_CO5300 path never initialised this panel (lcd.init() returned 1),
+so the 1.75C build drives it through **esp_lcd + the sp_lcd_co5300 component**
+(vendored under `libs/esp_lcd_co5300`; copy it into your Arduino libraries folder):
+
+- QSPI bus: CLK 38, D0-3 = 4/5/6/7, CS 12, RST 1, 32-bit command phase, quad mode.
+- Framebuffer is 466x466x2 in PSRAM; **push in 16-line strips** because a PSRAM source
+  cannot be a DMA buffer and a full-frame bounce buffer does not fit in internal RAM.
+- Touch: CST9217 on I2C (SDA 15 / SCL 14 / RST 2, addr 0x5A), regs 0x02/0x03.
+- Boot log should end with `STAGE panel=1` + `READY dsh-pet-175c v2`.

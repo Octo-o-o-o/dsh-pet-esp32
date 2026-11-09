@@ -1,88 +1,27 @@
 // dsh-pet for Waveshare ESP32-S3-Touch-AMOLED-1.75C
 //
-// Same animation blob and serial protocol as the M5Stack Dial build, but the
-// panel is a 466x466 CO5300 over QSPI and the only input is the CST9217 touch
-// panel, so gestures replace the knob:
-//   tap            -> next animation
-//   double tap     -> previous animation
-//   swipe left/right -> next / previous
-//   long press     -> sleep / wake
+// Panel: CO5300 466x466 over QSPI, driven through esp_lcd + the esp_lcd_co5300
+// component (the M5GFX path never initialised this panel). Frames are decoded
+// into a PSRAM framebuffer and pushed with esp_lcd_panel_draw_bitmap.
+//
+// Input is the CST9217 touch panel; gestures replace the Dial's knob:
+//   tap -> next animation, double tap -> previous, swipe -> next/previous,
+//   long press -> sleep/wake.
 
-#define LGFX_USE_QSPI
-#include <M5GFX.h>
-#include <lgfx/v1/panel/Panel_CO5300.hpp>
-#include <JPEGDEC.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_co5300.h>
+#include <driver/spi_master.h>
+#include <esp_heap_caps.h>
 #include <Wire.h>
+#include <JPEGDEC.h>
 #include <esp_partition.h>
 
 static const int SCR = 466;
 
-// ---------------------------------------------------------------- panel
-class Panel_175C : public lgfx::Panel_CO5300 {
- public:
-  const uint8_t* getInitCommands(uint8_t listno) const override {
-    static constexpr uint8_t list0[] = {
-        0xFE, 1, 0x20,
-        0x19, 1, 0x10,
-        0x1C, 1, 0xA0,
-        0xFE, 1, 0x00,
-        0xC4, 1, 0x80,
-        0x3A, 1, 0x55,   // 16bpp
-        0x35, 1, 0x00,
-        0x53, 1, 0x20,
-        0x51, 1, 0xFF,
-        0x63, 1, 0xFF,
-        0x2A, 4, 0x00, 0x06, 0x01, 0xD7,
-        0x2B, 4, 0x00, 0x00, 0x01, 0xD1,
-        0x11, 0, 120,
-        0x29, 0, 0,
-        0xFF, 0xFF,
-    };
-    return (listno == 0) ? list0 : nullptr;
-  }
-};
-
-class LGFX_175C : public lgfx::LGFX_Device {
-  Panel_175C _panel;
-  lgfx::Bus_SPI _bus;
- public:
-  LGFX_175C() {
-    auto b = _bus.config();
-    b.spi_host = SPI2_HOST;
-    b.spi_mode = 0;
-    b.freq_write = 80000000;
-    b.freq_read = 16000000;
-    b.spi_3wire = false;
-    b.use_lock = true;
-    b.dma_channel = SPI_DMA_CH_AUTO;
-    b.pin_sclk = 38;
-    b.pin_io0 = 4;
-    b.pin_io1 = 5;
-    b.pin_io2 = 6;
-    b.pin_io3 = 7;
-    _bus.config(b);
-    _panel.setBus(&_bus);
-
-    auto p = _panel.config();
-    p.pin_cs = 12;
-    p.pin_rst = 1;
-    p.pin_busy = -1;
-    p.panel_width = 466;
-    p.panel_height = 466;
-    p.memory_width = 480;
-    p.memory_height = 466;
-    p.offset_x = 6;
-    p.offset_y = 0;
-    p.readable = false;
-    p.invert = false;
-    p.rgb_order = false;
-    _panel.config(p);
-    setPanel(&_panel);
-  }
-};
-
-static LGFX_175C lcd;
-static LGFX_Sprite canvas(&lcd);
+static esp_lcd_panel_handle_t panel = nullptr;
+static esp_lcd_panel_io_handle_t io = nullptr;
+static uint16_t* fb = nullptr;
 static JPEGDEC jpeg;
 
 // ---------------------------------------------------------------- asset format
@@ -129,7 +68,10 @@ static uint32_t framesDrawn = 0;
 static char serialLine[128];
 static size_t serialLen = 0;
 
-static inline uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) { return lgfx::color565(r, g, b); }
+static inline uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
+  return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+// the panel takes 16-bit pixels MSB first, so store RGB565 byte-swapped
 static inline uint16_t sw(uint16_t v) { return (uint16_t)((v >> 8) | (v << 8)); }
 
 static int findRole(uint8_t role) {
@@ -167,12 +109,11 @@ static void pickPhrase(DshState s) {
 
 // ---------------------------------------------------------------- render
 static int drawBlock(JPEGDRAW* d) {
-  uint16_t* dst = (uint16_t*)canvas.getBuffer();
   int w = d->iWidth;
   for (int y = 0; y < d->iHeight; y++) {
     int dy = d->y + y, dx = d->x;
     if (dy < 0 || dy >= SCR || dx < 0 || dx + w > SCR) continue;
-    memcpy(dst + dy * SCR + dx, d->pPixels + y * w, w * 2);
+    memcpy(fb + dy * SCR + dx, d->pPixels + y * w, w * 2);
   }
   return 1;
 }
@@ -181,22 +122,21 @@ static void blitText(uint16_t id, int cx, int cy, uint16_t fg) {
   const PetText* t = findText(id);
   if (!t) return;
   int rb = (t->w + 7) / 8;
+  int bytes = rb * t->h;
+  if (!textBuf || bytes > 16384) return;
+  if (esp_partition_read(assetPart, t->offset, textBuf, bytes) != ESP_OK) return;
+
   int x0 = cx - t->w / 2, y0 = cy - t->h / 2;
-  uint16_t* fb = (uint16_t*)canvas.getBuffer();
   for (int y = y0 - 5; y < y0 + t->h + 5; y++) {
     if (y < 0 || y >= SCR) continue;
     for (int x = x0 - 10; x < x0 + t->w + 10; x++) {
       if (x < 0 || x >= SCR) continue;
-      uint16_t p = fb[y * SCR + x];
-      uint16_t v = sw(p);
+      uint16_t v = sw(fb[y * SCR + x]);
       v = (uint16_t)((v >> 1) & 0x7BEF);
       v = (uint16_t)((v >> 1) & 0x7BEF);
       fb[y * SCR + x] = sw(v);
     }
   }
-  int bytes = rb * t->h;
-  if (!textBuf || bytes > 16384) return;
-  if (esp_partition_read(assetPart, t->offset, textBuf, bytes) != ESP_OK) return;
   uint16_t f = sw(fg);
   for (int y = 0; y < t->h; y++) {
     const uint8_t* row = textBuf + y * rb;
@@ -208,6 +148,16 @@ static void blitText(uint16_t id, int cx, int cy, uint16_t fg) {
   }
 }
 
+static void pushFb() {
+  // PSRAM cannot be a DMA source, and a full-frame bounce buffer (434 KB) does not
+  // fit in internal RAM: push 16-line strips so each DMA buffer stays small.
+  const int STRIP = 16;
+  for (int y = 0; y < SCR; y += STRIP) {
+    int h = (SCR - y < STRIP) ? (SCR - y) : STRIP;
+    esp_lcd_panel_draw_bitmap(panel, 0, y, SCR, y + h, fb + (size_t)y * SCR);
+  }
+}
+
 static void renderFrame(int anim, int f) {
   if (anim < 0 || anim >= (int)hdr->animCount) return;
   const PetAnim& a = anims[anim];
@@ -215,6 +165,7 @@ static void renderFrame(int anim, int f) {
   const PetFrame& pf = frames[a.first + f];
   if (!frameBuf || pf.size > 65536) return;
   if (esp_partition_read(assetPart, pf.offset, frameBuf, pf.size) != ESP_OK) return;
+
   jpeg.openRAM(frameBuf, pf.size, drawBlock);
   jpeg.setPixelType(RGB565_BIG_ENDIAN);
   if (jpeg.decode(0, 0, 0)) framesDrawn++;
@@ -222,15 +173,17 @@ static void renderFrame(int anim, int f) {
 
   if (dshState != DS_NONE && phraseId) blitText(phraseId, SCR / 2, SCR - 64, 0xFFFF);
   else if (curAnim >= 0) blitText((uint16_t)(ID_ANIM + curAnim), SCR / 2, SCR - 64, 0xFFFF);
-  canvas.pushSprite(0, 0);
+
+  pushFb();
 }
 
 // ---------------------------------------------------------------- playback
 static void scheduleFrame() {
   if (curAnim < 0) return;
   const PetAnim& a = anims[curAnim];
-  nextFrameAt += frames[a.first + curFrame].duration;
-  if ((int32_t)(millis() - nextFrameAt) > 250) nextFrameAt = millis() + frames[a.first + curFrame].duration;
+  uint32_t dur = frames[a.first + curFrame].duration;
+  nextFrameAt += dur;
+  if ((int32_t)(millis() - nextFrameAt) > 250) nextFrameAt = millis() + dur;
 }
 static void startAnim(int anim) {
   curAnim = anim; curFrame = 0;
@@ -314,7 +267,6 @@ static bool touchInit() {
   Wire.beginTransmission(TOUCH_ADDR);
   return Wire.endTransmission() == 0;
 }
-// returns 0 none, 1 point
 static bool touchRead(int* px, int* py) {
   Wire.beginTransmission(TOUCH_ADDR);
   Wire.write(0x02);
@@ -333,11 +285,7 @@ static bool touchRead(int* px, int* py) {
   return true;
 }
 
-struct TouchState {
-  bool down = false;
-  uint32_t downMs = 0, lastTapMs = 0;
-  int startX = 0, startY = 0, x = 0, y = 0;
-};
+struct TouchState { bool down = false; uint32_t downMs = 0, lastTapMs = 0; int startX = 0, startY = 0, x = 0, y = 0; };
 static TouchState ts;
 
 static void handleGesture(bool down, int x, int y) {
@@ -348,34 +296,19 @@ static void handleGesture(bool down, int x, int y) {
     ts.down = false;
     uint32_t held = now - ts.downMs;
     int dx = x - ts.startX;
-    if (held > 700) {
-      toggleSleep();
-      return;
-    }
-    if (abs(dx) > 60) {
-      stepManual(dx < 0 ? +1 : -1);
-      return;
-    }
+    if (held > 700) { toggleSleep(); return; }
+    if (abs(dx) > 60) { stepManual(dx < 0 ? +1 : -1); return; }
     if (held < 400) {
-      if (now - ts.lastTapMs < 350) {
-        ts.lastTapMs = 0;
-        stepManual(-1);          // double tap = previous
-      } else {
-        ts.lastTapMs = now;
-        stepManual(+1);          // single tap = next
-      }
+      if (now - ts.lastTapMs < 350) { ts.lastTapMs = 0; stepManual(-1); }
+      else { ts.lastTapMs = now; stepManual(+1); }
     }
   }
   ts.x = x; ts.y = y;
 }
-
 static void pollTouch() {
   int x, y;
   bool down = touchRead(&x, &y);
-  if (down) {
-    x = x * SCR / 466;
-    y = y * SCR / 466;
-  }
+  if (down) { x = x * SCR / 466; y = y * SCR / 466; }
   handleGesture(down, x, y);
 }
 
@@ -412,16 +345,6 @@ static void handleLine(char* line) {
                   hdr->animCount, hdr->frameCount, hdr->textCount, (unsigned)ESP.getFreeHeap(),
                   curAnim >= 0 ? anims[curAnim].label : "?", curFrame,
                   (unsigned)framesDrawn, (int)dshState);
-  } else if (cmd == 'V') {
-    uint16_t* buf = (uint16_t*)canvas.getBuffer();
-    Serial.printf("SHOT %d\n", SCR / 2);
-    char line[8 + (SCR / 2) * 4 + 4];
-    for (int y = 0; y < SCR; y += 2) {
-      int n = snprintf(line, sizeof(line), "P%03d ", y);
-      for (int x = 0; x < SCR; x += 2) n += snprintf(line + n, sizeof(line) - n, "%04x", buf[y * SCR + x]);
-      Serial.println(line);
-    }
-    Serial.println("END");
   }
 }
 static void pollSerial() {
@@ -437,6 +360,44 @@ static void pollSerial() {
 }
 
 // ---------------------------------------------------------------- setup
+static bool panelInit() {
+  spi_bus_config_t buscfg = {};
+  buscfg.sclk_io_num = 38;
+  buscfg.data0_io_num = 4;
+  buscfg.data1_io_num = 5;
+  buscfg.data2_io_num = 6;
+  buscfg.data3_io_num = 7;
+  buscfg.max_transfer_sz = SCR * SCR * 2;
+  if (spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) return false;
+
+  esp_lcd_panel_io_spi_config_t io_config = {};
+  io_config.cs_gpio_num = 12;
+  io_config.dc_gpio_num = -1;
+  io_config.spi_mode = 0;
+  io_config.pclk_hz = 40 * 1000 * 1000;
+  io_config.trans_queue_depth = 10;
+  io_config.lcd_cmd_bits = 32;
+  io_config.lcd_param_bits = 8;
+  io_config.flags.quad_mode = true;
+  if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &io) != ESP_OK) return false;
+
+  co5300_vendor_config_t vendor = {};
+  vendor.init_cmds = NULL;
+  vendor.init_cmds_size = 0;
+  vendor.flags.use_qspi_interface = 1;
+  esp_lcd_panel_dev_config_t pcfg = {};
+  pcfg.reset_gpio_num = 1;
+  pcfg.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+  pcfg.bits_per_pixel = 16;
+  pcfg.vendor_config = &vendor;
+  if (esp_lcd_new_panel_co5300(io, &pcfg, &panel) != ESP_OK) return false;
+  if (esp_lcd_panel_reset(panel) != ESP_OK) return false;
+  if (esp_lcd_panel_init(panel) != ESP_OK) return false;
+  esp_lcd_panel_set_gap(panel, 0x06, 0);
+  esp_lcd_panel_disp_on_off(panel, true);
+  return true;
+}
+
 static bool mountAssets() {
   assetPart = esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "assets");
@@ -461,19 +422,15 @@ void setup() {
   Serial.begin(115200);
   delay(300);
   Serial.println("STAGE serial");
-  lcd.init();
-  Serial.println("STAGE lcd");
-  lcd.setRotation(0);
-  lcd.setBrightness(200);
+  bool panelOk = panelInit();
+  Serial.printf("STAGE panel=%d\n", panelOk);
+  if (!panelOk) return;
 
-  Serial.println("STAGE canvas");
-  void* sbuf = heap_caps_malloc((size_t)SCR * SCR * 2, MALLOC_CAP_SPIRAM);
-  if (!sbuf) { Serial.println("ERR sprite"); return; }
-  canvas.setBuffer(sbuf, SCR, SCR, 16);
-  canvas.fillScreen(0x0821);
-  canvas.pushSprite(0, 0);
+  fb = (uint16_t*)heap_caps_malloc((size_t)SCR * SCR * 2, MALLOC_CAP_SPIRAM);
+  if (!fb) { Serial.println("ERR fb"); return; }
+  for (int i = 0; i < SCR * SCR; i++) fb[i] = sw(rgb(10, 14, 26));
+  pushFb();
 
-  Serial.println("STAGE assets");
   assetsOk = mountAssets();
   bool touchOk = touchInit();
   Serial.printf("touch %s\n", touchOk ? "ok" : "missing");
@@ -485,7 +442,7 @@ void setup() {
   nextFrameAt = millis();
   scheduleFrame();
   nextAutoMs = millis() + 8000;
-  Serial.println("READY dsh-pet-175c v1");
+  Serial.println("READY dsh-pet-175c v2");
 }
 
 void loop() {
