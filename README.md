@@ -162,3 +162,14 @@ so the 1.75C build drives it through **esp_lcd + the sp_lcd_co5300 component**
   cannot be a DMA buffer and a full-frame bounce buffer does not fit in internal RAM.
 - Touch: CST9217 on I2C (SDA 15 / SCL 14 / RST 2, addr 0x5A), regs 0x02/0x03.
 - Boot log should end with `STAGE panel=1` + `READY dsh-pet-175c v2`.
+
+### 1.75C verification
+
+```text
+INFO anims=26 frames=562 texts=46 heap=313824 cur=WORKING f=6 drawn=380 dsh=3
+```
+
+- Boot log: `STAGE panel=1` → `assets ok` → `touch ok` → `READY dsh-pet-175c v2`.
+- Gestures can be exercised without a finger via `G <n>` on the serial port:
+  `G 1` tap, `G 2` long press, `G 3` swipe left, `G 4` swipe right.
+- `S working` returns `ACK S working` and the device switches to the WORKING clip.

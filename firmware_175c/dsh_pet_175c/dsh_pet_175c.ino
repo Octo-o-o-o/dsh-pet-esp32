@@ -374,6 +374,14 @@ static void handleLine(char* line) {
       Serial.println(line);
     }
     Serial.println("END");
+  } else if (cmd == 'G') {
+    // gesture injection for testing: 1 tap, 2 long press, 3 swipe left, 4 swipe right
+    int kind = atoi(arg);
+    if (kind == 1) { handleGesture(true, 230, 230); delay(80); handleGesture(false, 230, 230); }
+    else if (kind == 2) { handleGesture(true, 230, 230); delay(900); handleGesture(false, 230, 230); }
+    else if (kind == 3) { handleGesture(true, 320, 230); handleGesture(false, 140, 230); }
+    else if (kind == 4) { handleGesture(true, 140, 230); handleGesture(false, 320, 230); }
+    Serial.printf("ACK G %d\n", kind);
   } else if (cmd == 'I') {
     Serial.printf("INFO anims=%u frames=%u texts=%u heap=%u cur=%s f=%d drawn=%u dsh=%d\n",
                   hdr->animCount, hdr->frameCount, hdr->textCount, (unsigned)ESP.getFreeHeap(),
