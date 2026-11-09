@@ -22,12 +22,11 @@ $sketch = Join-Path $root "firmware\dsh_pet_dial"
 $build = Join-Path $root "firmware\build"
 $cli = Join-Path $PSScriptRoot "arduino-cli\arduino-cli.exe"
 
-$ToolRoot = if ($env:DSH_DIAL_TOOLCHAIN) { $env:DSH_DIAL_TOOLCHAIN } else { "C:\dshdial" }
-$env:ARDUINO_DIRECTORIES_DATA = "$ToolRoot\arduino-data"
-$env:ARDUINO_DIRECTORIES_DOWNLOADS = "$ToolRoot\arduino-dl"
-$env:ARDUINO_DIRECTORIES_USER = "$ToolRoot\arduino-user"
-$env:TMP = "$ToolRoot\tmp"
-$env:TEMP = "$ToolRoot\tmp"
+$env:ARDUINO_DIRECTORIES_DATA = "C:\dshdial\arduino-data"
+$env:ARDUINO_DIRECTORIES_DOWNLOADS = "C:\dshdial\arduino-dl"
+$env:ARDUINO_DIRECTORIES_USER = "C:\dshdial\arduino-user"
+$env:TMP = "C:\dshdial\tmp"
+$env:TEMP = "C:\dshdial\tmp"
 
 $fqbn = "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=disabled,CPUFreq=240,FlashMode=qio,UploadSpeed=921600"
 
